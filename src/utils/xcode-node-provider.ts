@@ -4,7 +4,7 @@ import * as xcode from 'xcode-proj'
 import * as fs from 'fs'
 import * as path from 'path'
 
-export class XcodeNodeProvider implements TreeExplorerNodeProvider<IXcodeNode> {
+export class XcodeNodeProvider implements TreeExplorerNodeProvider<XcodeNode> {
 
   constructor(public rootPath: string) { }
 
@@ -25,7 +25,7 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<IXcodeNode> {
 		 * @param node The node from which the provider resolves children.
 		 * @return Children of `node`.
 		 */
-		resolveChildren(node: IXcodeNode): IXcodeNode[] | Thenable<IXcodeNode[]> {
+		resolveChildren(node: XcodeNode): XcodeNode[] | Thenable<XcodeNode[]> {
       // TODO add option to sort alphabetically
       return node.children();
     }
@@ -37,7 +37,7 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<IXcodeNode> {
 		 * @param node The node from which the provider computes label.
 		 * @return A human-readable label.
 		 */
-		getLabel?(node: IXcodeNode): string {
+		getLabel?(node: XcodeNode): string {
       return node.label()
     }
 
@@ -47,7 +47,7 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<IXcodeNode> {
 		 * @param node The node to determine if it has children and is expandable.
 		 * @return A boolean that determines if `node` has children and is expandable.
 		 */
-		getHasChildren?(node: IXcodeNode): boolean {
+		getHasChildren?(node: XcodeNode): boolean {
       return node.hasChildren;
     }
 
@@ -60,18 +60,18 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<IXcodeNode> {
 		 * @param node The node that the command is associated with.
 		 * @return The command to execute when `node` is clicked.
 		 */
-		getClickCommand?(node: IXcodeNode): string {
+		getClickCommand?(node: XcodeNode): string {
       return node.clickCommand
     }
 }
 
-export interface IXcodeNode {
+export interface XcodeNode {
 
   hasChildren : boolean
 
   clickCommand? : string
   
-  children() : IXcodeNode[] | Thenable<IXcodeNode[]>
+  children() : XcodeNode[] | Thenable<XcodeNode[]>
   
   label() : string
 
@@ -79,13 +79,13 @@ export interface IXcodeNode {
 }
 	
 
-class RootNode implements IXcodeNode {
+class RootNode implements XcodeNode {
 
   hasChildren = true
 	
   constructor(public rootPath: string) { }
 
-  children() : IXcodeNode[] {
+  children() : XcodeNode[] {
     return fs.readdirSync(this.rootPath)
       .filter((file) => file.match(/\.xcodeproj$/))
       .map((file) => new ProjectNode(file, this));
@@ -101,15 +101,15 @@ class RootNode implements IXcodeNode {
   }
 }
 
-class ProjectNode implements IXcodeNode {
+class ProjectNode implements XcodeNode {
 
   hasChildren = true
 	
   constructor(public file: string, public parent: RootNode) { }
 
-  children() : Thenable<IXcodeNode[]> {
+  children() : Thenable<XcodeNode[]> {
 
-    return new Promise<IXcodeNode[]>((resolve, reject) => {
+    return new Promise<XcodeNode[]>((resolve, reject) => {
       
       const proj = xcode.project(path.join(this.parent.rootPath, this.file, 'project.pbxproj'))
       proj.parseSync()
@@ -132,15 +132,15 @@ class ProjectNode implements IXcodeNode {
   }
 }
 
-class GroupNode implements IXcodeNode {
+class GroupNode implements XcodeNode {
 
   hasChildren = true
 	
-  constructor(public project: any, public data: any, public parent: IXcodeNode) { }
+  constructor(public project: any, public data: any, public parent: XcodeNode) { }
 
-  children() : Thenable<IXcodeNode[]> {
+  children() : Thenable<XcodeNode[]> {
 
-    return new Promise<IXcodeNode[]>((resolve, reject) => {
+    return new Promise<XcodeNode[]>((resolve, reject) => {
 
       const bfileSec =  this.project.pbxBuildFileSection()
       const bfileKeys =  Object.keys(bfileSec)
@@ -197,7 +197,7 @@ class GroupNode implements IXcodeNode {
   }
 }
 
-export class BuildFileNode implements IXcodeNode {
+export class BuildFileNode implements XcodeNode {
 
   hasChildren = false
 
@@ -205,7 +205,7 @@ export class BuildFileNode implements IXcodeNode {
 	
   constructor(public project: any, public data: any, public parent: GroupNode) { }
 
-  children() : Thenable<IXcodeNode[]> {
+  children() : Thenable<XcodeNode[]> {
     return null
   }
 
@@ -221,7 +221,7 @@ export class BuildFileNode implements IXcodeNode {
   }  
 }
 
-export class FileNode implements IXcodeNode {
+export class FileNode implements XcodeNode {
 
   hasChildren = false
 
@@ -229,7 +229,7 @@ export class FileNode implements IXcodeNode {
 	
   constructor(public project: any, public data: any, public parent: GroupNode) { }
 
-  children() : Thenable<IXcodeNode[]> {
+  children() : Thenable<XcodeNode[]> {
     return null
   }
 
