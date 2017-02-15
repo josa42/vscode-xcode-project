@@ -5,7 +5,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { Promise } from 'es6-promise'
 
-export class XcodeNodeProvider implements TreeExplorerNodeProvider<XcodeTreeNode> {
+export class XcodeNodeProvider implements TreeExplorerNodeProvider<IXcodeNode> {
 
   constructor(public rootPath: string) { }
 
@@ -17,7 +17,7 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<XcodeTreeNode
 		 * @return The root node.
 		 */
 		provideRootNode() {
-      return new Root(this.rootPath)
+      return new RootNode(this.rootPath)
     }
 
 		/**
@@ -26,7 +26,7 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<XcodeTreeNode
 		 * @param node The node from which the provider resolves children.
 		 * @return Children of `node`.
 		 */
-		resolveChildren(node: XcodeTreeNode): XcodeTreeNode[] | Thenable<XcodeTreeNode[]> {
+		resolveChildren(node: IXcodeNode): IXcodeNode[] | Thenable<IXcodeNode[]> {
       return node.children();
     }
 
@@ -37,7 +37,7 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<XcodeTreeNode
 		 * @param node The node from which the provider computes label.
 		 * @return A human-readable label.
 		 */
-		getLabel?(node: XcodeTreeNode): string {
+		getLabel?(node: IXcodeNode): string {
       return node.label()
     }
 
@@ -47,7 +47,7 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<XcodeTreeNode
 		 * @param node The node to determine if it has children and is expandable.
 		 * @return A boolean that determines if `node` has children and is expandable.
 		 */
-		getHasChildren?(node: XcodeTreeNode): boolean {
+		getHasChildren?(node: IXcodeNode): boolean {
       return node.hasChildren;
     }
 
@@ -60,58 +60,63 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<XcodeTreeNode
 		 * @param node The node that the command is associated with.
 		 * @return The command to execute when `node` is clicked.
 		 */
-		getClickCommand?(node: XcodeTreeNode): string {
-      return node.clickCommand ? node.clickCommand() : null
+		getClickCommand?(node: IXcodeNode): string {
+      return node.clickCommand
     }
 }
 
-interface XcodeTreeNode {
+export interface IXcodeNode {
 
   hasChildren : boolean
+
+  clickCommand? : string
   
-  children() : XcodeTreeNode[] | Thenable<XcodeTreeNode[]>
+  children() : IXcodeNode[] | Thenable<IXcodeNode[]>
   
   label() : string
 
-  clickCommand?()  : string
+  path() : string
 }
 	
 
-class Root implements XcodeTreeNode {
+class RootNode implements IXcodeNode {
 
   hasChildren = true
 	
-  constructor(public path: string) { }
+  constructor(public rootPath: string) { }
 
-  children() : XcodeTreeNode[] {
-
-    return (<string[]>fs.readdirSync(this.path))
+  children() : IXcodeNode[] {
+    return fs.readdirSync(this.rootPath)
       .filter((file) => file.match(/\.xcodeproj$/))
-      .map((file) => new Project(this.path, file));
+      .map((file) => new ProjectNode(file, this));
   }
 
   label() : string {
     return "Xcode"
   }
+
+  path() : string {
+    // console.log(`RootNode ${this.label()}:`, this.rootPath);
+    return this.rootPath
+  }
 }
 
-class Project implements XcodeTreeNode {
+class ProjectNode implements IXcodeNode {
 
   hasChildren = true
 	
-  constructor(public path: string, public file: string) { }
+  constructor(public file: string, public parent: RootNode) { }
 
-  children() : Thenable<XcodeTreeNode[]> {
+  children() : Thenable<IXcodeNode[]> {
 
-    return new Promise<XcodeTreeNode[]>((resolve, reject) => {
+    return new Promise<IXcodeNode[]>((resolve, reject) => {
       
-      const proj = xcode.project(path.join(this.path, this.file, 'project.pbxproj'))
+      const proj = xcode.project(path.join(this.parent.rootPath, this.file, 'project.pbxproj'))
       proj.parseSync()
 
       const projSection = proj.pbxProjectSection()
-      const groups = proj.getPBXGroupByKey(projSection[proj.hash.project.rootObject].mainGroup).children.map((child) => {
-        return new Group(proj, child)
-      })
+      const groups = proj.getPBXGroupByKey(projSection[proj.hash.project.rootObject].mainGroup).children
+        .map((child) => new GroupNode(proj, child, this))
       
       resolve(groups)
     })
@@ -120,37 +125,52 @@ class Project implements XcodeTreeNode {
   label() : string {
     return this.file
   }
+
+  path() : string {
+    // console.log(`ProjectNode ${this.label()}:`, '');
+    return path.join(this.parent.path())
+  }
 }
 
-class Group implements XcodeTreeNode {
+class GroupNode implements IXcodeNode {
 
   hasChildren = true
 	
-  constructor(public project: any, public data: any) { }
+  constructor(public project: any, public data: any, public parent: IXcodeNode) { }
 
-  children() : Thenable<XcodeTreeNode[]> {
+  children() : Thenable<IXcodeNode[]> {
 
-    return new Promise<XcodeTreeNode[]>((resolve, reject) => {
+    return new Promise<IXcodeNode[]>((resolve, reject) => {
       
-
-      const groups = this.project.getPBXGroupByKey(this.data.value).children
+      const groups = this.group().children
         .filter((child) => this.project.getPBXGroupByKey(child.value))
-        .map((child) => new Group(this.project, child))
+        .map((child) => new GroupNode(this.project, child, this))
       
-      const files = this.project.getPBXGroupByKey(this.data.value).children
-        .map((child) => ({ data: child, file: this.file(child.value) }))
-        .filter((file) => file.file)
-        .map((file) => new File(this.project, file.data, file.file))
+      const files = this.group().children
+        .filter((child) => this.file(child.value))
+        .map((child) => new FileNode(this.project, child, this))
 
       
       resolve([].concat(groups, files));
     })
-
-    
   }
 
   label() : string {
     return this.data.comment
+  }
+
+  path() : string {
+
+    const parentPath = this.parent.path()
+    const grouPath = this.group().path
+
+    // console.log(`GroupNode ${this.label()}:`, grouPath);
+
+    return grouPath ? path.join(parentPath, grouPath) : parentPath
+  }
+
+  private group() : any {
+    return this.project.getPBXGroupByKey(this.data.value)
   }
 
   private file(key: string): any {
@@ -159,13 +179,15 @@ class Group implements XcodeTreeNode {
   }
 }
 
-class File implements XcodeTreeNode {
+export class FileNode implements IXcodeNode {
 
   hasChildren = false
-	
-  constructor(public project: any, public data: any, public file: any) { }
 
-  children() : Thenable<XcodeTreeNode[]> {
+  clickCommand = 'extension.openXcodeFileNode'
+	
+  constructor(public project: any, public data: any, public parent: GroupNode) { }
+
+  children() : Thenable<IXcodeNode[]> {
     return null
   }
 
@@ -173,8 +195,15 @@ class File implements XcodeTreeNode {
     return this.data.comment
   }
 
-  clickCommand()  : string {
-    console.log('file', this.file)
-    return null
-  }
+  path() : string {
+
+    const refs = this.project.pbxFileReferenceSection()
+    const ref = refs[this.data.value]
+
+    const fileName = ref.path.replace(/(^"|"$)/g, '');
+
+    // console.log(`FileNode ${this.label()}:`, fileName);
+
+    return path.join(this.parent.path(), fileName)
+  }  
 }
