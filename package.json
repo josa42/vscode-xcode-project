@@ -34,6 +34,21 @@
       "treeLabel": "Xcode",
       "icon": "assets/icon.svg",
       "treeExplorerNodeProviderId": "XcodeProject"
+    },
+    "configuration": {
+      "title": "Configuration for Javascript autolinting.",
+      "properties": {
+        "xcodeProject.sortAlphabetically": {
+          "type": "boolean",
+          "default": true,
+          "description": "Sort children alphabetically"
+        },
+        "xcodeProject.directoriesFirst": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show directories first"
+        }
+      }
     }
   },
   "scripts": {

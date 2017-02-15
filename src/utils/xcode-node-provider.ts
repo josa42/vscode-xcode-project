@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
-import { TreeExplorerNodeProvider } from 'vscode'
+import { TreeExplorerNodeProvider, workspace } from 'vscode'
 import * as xcode from 'xcode-proj'
 import * as fs from 'fs'
 import * as path from 'path'
 
 export class XcodeNodeProvider implements TreeExplorerNodeProvider<XcodeNode> {
 
-  constructor(public rootPath: string) { }
+  constructor(public rootPath: string) {}
 
     /**
 		 * Provide the root node. This function will be called when the tree explorer is activated
@@ -26,8 +26,19 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<XcodeNode> {
 		 * @return Children of `node`.
 		 */
 		resolveChildren(node: XcodeNode): XcodeNode[] | Thenable<XcodeNode[]> {
-      // TODO add option to sort alphabetically
-      return node.children();
+
+      let children = node.children()
+
+      const config = workspace.getConfiguration()
+      const sortAlphabetically = config.get<boolean>('xcodeProject.sortAlphabetically');
+
+      if (sortAlphabetically) {
+        children = Array.isArray(children)
+          ? children.sort((a, b) => a.sortKey().localeCompare(b.sortKey()))
+          : children.then((children) => children.sort((a, b) => a.sortKey().localeCompare(b.sortKey())))
+      }
+      
+      return children;
     }
 
 		/**
@@ -65,25 +76,31 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<XcodeNode> {
     }
 }
 
-export interface XcodeNode {
+export abstract class XcodeNode {
 
-  hasChildren : boolean
+  hasChildren : boolean = false
 
-  clickCommand? : string
+  clickCommand? : string = null
+
+  sortKey() : string {
+    return `001-${this.label()}`
+  }
   
-  children() : XcodeNode[] | Thenable<XcodeNode[]>
+  abstract children() : XcodeNode[] | Thenable<XcodeNode[]>
   
-  label() : string
+  abstract label() : string
 
-  path() : string
+  abstract path() : string
 }
 	
 
-class RootNode implements XcodeNode {
+class RootNode extends XcodeNode {
 
   hasChildren = true
 	
-  constructor(public rootPath: string) { }
+  constructor(public rootPath: string) {
+    super()
+  }
 
   children() : XcodeNode[] {
     return fs.readdirSync(this.rootPath)
@@ -101,11 +118,13 @@ class RootNode implements XcodeNode {
   }
 }
 
-class ProjectNode implements XcodeNode {
+class ProjectNode extends XcodeNode {
 
   hasChildren = true
 	
-  constructor(public file: string, public parent: RootNode) { }
+  constructor(public file: string, public parent: RootNode) {
+    super()
+  }
 
   children() : Thenable<XcodeNode[]> {
 
@@ -132,11 +151,13 @@ class ProjectNode implements XcodeNode {
   }
 }
 
-class GroupNode implements XcodeNode {
+class GroupNode extends XcodeNode {
 
   hasChildren = true
 	
-  constructor(public project: any, public data: any, public parent: XcodeNode) { }
+  constructor(public project: any, public data: any, public parent: XcodeNode) {
+    super()
+  }
 
   children() : Thenable<XcodeNode[]> {
 
@@ -177,6 +198,13 @@ class GroupNode implements XcodeNode {
     return this.data.comment
   }
 
+  sortKey() : string {
+    const directoriesFirst = workspace.getConfiguration().get<boolean>('xcodeProject.directoriesFirst');
+    const prefix = directoriesFirst ? '000' : '001'
+    
+    return `${prefix}-${this.label()}`
+  }
+
   path() : string {
 
     const parentPath = this.parent.path()
@@ -197,13 +225,15 @@ class GroupNode implements XcodeNode {
   }
 }
 
-export class BuildFileNode implements XcodeNode {
+export class BuildFileNode extends XcodeNode {
 
   hasChildren = false
 
   clickCommand = null
 	
-  constructor(public project: any, public data: any, public parent: GroupNode) { }
+  constructor(public project: any, public data: any, public parent: GroupNode) {
+    super()
+  }
 
   children() : Thenable<XcodeNode[]> {
     return null
@@ -221,13 +251,15 @@ export class BuildFileNode implements XcodeNode {
   }  
 }
 
-export class FileNode implements XcodeNode {
+export class FileNode extends XcodeNode {
 
   hasChildren = false
 
   clickCommand = 'extension.openXcodeFileNode'
 	
-  constructor(public project: any, public data: any, public parent: GroupNode) { }
+  constructor(public project: any, public data: any, public parent: GroupNode) {
+    super()
+  }
 
   children() : Thenable<XcodeNode[]> {
     return null
