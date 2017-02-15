@@ -42,10 +42,11 @@
     "postinstall": "node ./node_modules/vscode/bin/install"
   },
   "devDependencies": {
-    "@types/node": "*",
-    "@types/es6-promise": "*",
-    "es6-promise": "^4.0.5",
+    "@types/mocha": "^2.2.32",
+    "@types/node": "^6.0.40",
+    "mocha": "^2.3.3",
     "typescript": "^2.0.3",
-    "vscode": "^1.0.3"
+    "vscode": "^1.0.3",
+    "xcode-proj": "^0.9.0"
   }
 }
