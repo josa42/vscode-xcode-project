@@ -3,7 +3,6 @@ import { TreeExplorerNodeProvider } from 'vscode'
 import * as xcode from 'xcode-proj'
 import * as fs from 'fs'
 import * as path from 'path'
-import { Promise } from 'es6-promise'
 
 export class XcodeNodeProvider implements TreeExplorerNodeProvider<IXcodeNode> {
 
@@ -27,6 +26,7 @@ export class XcodeNodeProvider implements TreeExplorerNodeProvider<IXcodeNode> {
 		 * @return Children of `node`.
 		 */
 		resolveChildren(node: IXcodeNode): IXcodeNode[] | Thenable<IXcodeNode[]> {
+      // TODO add option to sort alphabetically
       return node.children();
     }
 
@@ -141,17 +141,35 @@ class GroupNode implements IXcodeNode {
   children() : Thenable<IXcodeNode[]> {
 
     return new Promise<IXcodeNode[]>((resolve, reject) => {
-      
-      const groups = this.group().children
-        .filter((child) => this.project.getPBXGroupByKey(child.value))
-        .map((child) => new GroupNode(this.project, child, this))
-      
-      const files = this.group().children
-        .filter((child) => this.file(child.value))
-        .map((child) => new FileNode(this.project, child, this))
 
-      
-      resolve([].concat(groups, files));
+      const bfileSec =  this.project.pbxBuildFileSection()
+      const bfileKeys =  Object.keys(bfileSec)
+
+      const children = this.group().children
+        .map((child) => {
+
+          const { value } = child;
+
+          if (this.project.getPBXGroupByKey(value)) {
+            return new GroupNode(this.project, child, this)
+          
+          } else if (this.project.pbxFileReferenceSection()[value]) {
+            return new FileNode(this.project, child, this)
+          }
+
+          const bfileKey = bfileKeys.find((key) => bfileSec[key].fileRef === value)
+          const bfile = bfileSec[bfileKey]
+
+          if (bfile) {
+            return new BuildFileNode(this.project, bfile, this)
+          }
+
+          console.warn(`Unknown child ${JSON.stringify(child)}`)
+          
+        })
+        .filter((node) => node)
+  
+      resolve(children)
     })
   }
 
@@ -177,6 +195,30 @@ class GroupNode implements IXcodeNode {
     const files = this.project.pbxFileReferenceSection();
     return files[key]
   }
+}
+
+export class BuildFileNode implements IXcodeNode {
+
+  hasChildren = false
+
+  clickCommand = null
+	
+  constructor(public project: any, public data: any, public parent: GroupNode) { }
+
+  children() : Thenable<IXcodeNode[]> {
+    return null
+  }
+
+  label() : string {
+    return this.data.fileRef_comment
+  }
+
+  path() : string {
+
+    // console.log(`BuildFileNode ${this.label()}:`, this.data.fileRef_comment);
+
+    return path.join(this.parent.path(), this.data.fileRef_comment)
+  }  
 }
 
 export class FileNode implements IXcodeNode {
